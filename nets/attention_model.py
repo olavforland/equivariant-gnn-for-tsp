@@ -1,6 +1,5 @@
 import math
 import numpy as np
-from typing import NamedTuple
 
 import torch
 from torch import nn
@@ -11,9 +10,12 @@ from torch.nn import DataParallel
 from utils.tensor_functions import compute_in_batches
 from utils.beam_search import CachedLookup
 from utils.functions import sample_many
+from utils import RecordMixin
+from dataclasses import dataclass
+from nets.encoders.gnn_equiv_encoder import CircularHarmonicsGNNEncoder
 
-
-class AttentionModelFixed(NamedTuple):
+@dataclass(slots=True, frozen=False)
+class AttentionModelFixed(RecordMixin):
     """
     Context for AttentionModel decoder that is fixed during decoding so can be precomputed/cached
     This class allows for efficient indexing of multiple Tensors at once
@@ -34,7 +36,6 @@ class AttentionModelFixed(NamedTuple):
                 logit_key=self.logit_key[key]
             )
         return super(AttentionModelFixed, self).__getitem__(key)
-
 
 class AttentionModel(nn.Module):
 
@@ -146,7 +147,7 @@ class AttentionModel(nn.Module):
             self.W_placeholder.data.uniform_(-1, 1)  # Placeholder should be in range of activations
         
         # Input embedding layer
-        self.init_embed = nn.Linear(node_dim, embedding_dim, bias=True)        
+        self.init_embed = nn.Linear(node_dim, embedding_dim, bias=True)
         
         # Encoder model
         self.embedder = self.encoder_class(n_layers=n_encode_layers, 
@@ -157,6 +158,7 @@ class AttentionModel(nn.Module):
                                            learn_norm=learn_norm,
                                            track_norm=track_norm,
                                            gated=gated)
+
 
         # For each node we compute (glimpse key, glimpse value, logit key) so 3 * embedding_dim
         self.project_node_embeddings = nn.Linear(embedding_dim, 3 * embedding_dim, bias=False)
@@ -185,6 +187,8 @@ class AttentionModel(nn.Module):
         # Embed input batch of graph using GNN (B x V x H)
         if self.checkpoint_encoder:
             embeddings = checkpoint(self.embedder, self._init_embed(nodes), graph)
+        elif isinstance(self.embedder, CircularHarmonicsGNNEncoder):
+            embeddings = self.embedder(nodes, graph)
         else:
             embeddings = self.embedder(self._init_embed(nodes), graph)
         
@@ -210,7 +214,6 @@ class AttentionModel(nn.Module):
             # Set -inf values to -1000 for handling NLL loss
             logits[logits == -float(np.inf)] = -1000  
             loss = nn.NLLLoss(reduction='mean')(logits, targets)
-            
             if return_pi:
                 return cost, loss, pi 
             return cost, loss
@@ -476,7 +479,7 @@ class AttentionModel(nn.Module):
             log_p = F.log_softmax(log_p / self.temp, dim=-1)
 
         assert not torch.isnan(log_p).any()
-
+        
         return log_p, mask
 
     def _get_parallel_step_context(self, embeddings, state, from_depot=False):
@@ -565,6 +568,9 @@ class AttentionModel(nn.Module):
 
         # Compute the glimpse, rearrange dimensions to (n_heads, batch_size, num_steps, 1, key_size)
         glimpse_Q = query.view(batch_size, num_steps, self.n_heads, 1, key_size).permute(2, 0, 1, 3, 4)
+        
+        mask = mask.to(torch.bool)
+        graph_mask = graph_mask.to(torch.bool) if graph_mask is not None else None
         
         # Batch matrix multiplication to compute compatibilities (n_heads, batch_size, num_steps, graph_size)
         compatibility = torch.matmul(glimpse_Q, glimpse_K.transpose(-2, -1)) / math.sqrt(glimpse_Q.size(-1))

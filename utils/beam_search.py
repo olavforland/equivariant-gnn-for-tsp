@@ -1,8 +1,8 @@
 import time
 import torch
-from typing import NamedTuple
+from utils import RecordMixin
 from utils.lexsort import torch_lexsort
-
+from dataclasses import dataclass
 
 def beam_search(*args, **kwargs):
     beams, final_state = _beam_search(*args, **kwargs)
@@ -50,13 +50,14 @@ def _beam_search(state, beam_size, propose_expansions=None,
     # Return the final state separately since beams may not keep state
     return beams, beam.state
 
-
-class BatchBeam(NamedTuple):
+@dataclass(slots=True, frozen=False)
+class BatchBeam(RecordMixin):
     """
     Class that keeps track of a beam for beam search in batch mode.
     Since the beam size of different entries in the batch may vary, the tensors are not (batch_size, beam_size, ...)
     but rather (sum_i beam_size_i, ...), i.e. flattened. This makes some operations a bit cumbersome.
     """
+
     score: torch.Tensor  # Current heuristic score of each entry in beam (used to select most promising)
     state: None  # To track the state
     parent: torch.Tensor

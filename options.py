@@ -21,7 +21,7 @@ def get_options(args=None):
                         help="Strategy for k-nearest neighbors (None/'percentage')")
     parser.add_argument('--n_epochs', type=int, default=100, 
                         help='The number of epochs to train')
-    parser.add_argument('--epoch_size', type=int, default=1000000, 
+    parser.add_argument('--epoch_size', type=int, default=128000, 
                         help='Number of instances per epoch during training')
     parser.add_argument('--batch_size', type=int, default=128, 
                         help='Number of instances per batch during training')
@@ -41,7 +41,7 @@ def get_options(args=None):
     parser.add_argument('--model', default='attention', 
                         help="Model: 'attention'/'nar'")
     parser.add_argument('--encoder', default='gnn', 
-                        help="Graph encoder: 'gat'/'gnn'/'mlp'")
+                        help="Graph encoder: 'gat'/'gnn'/'ch_gnn'/'mlp'")
     parser.add_argument('--embedding_dim', type=int, default=128, 
                         help='Dimension of input embedding')
     parser.add_argument('--hidden_dim', type=int, default=128, 
@@ -58,7 +58,7 @@ def get_options(args=None):
                         help="Enable learnable affine transformation during normalization")
     parser.add_argument('--track_norm', action='store_true',
                         help="Enable tracking batch statistics during normalization")
-    parser.add_argument('--gated', action='store_true', 
+    parser.add_argument('--gated', action='store_true', default=True,
                         help="Enable edge gating during neighborhood aggregation")
     parser.add_argument('--n_heads', type=int, default=8, 
                         help="Number of attention heads")

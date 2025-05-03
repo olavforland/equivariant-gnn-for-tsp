@@ -17,6 +17,7 @@ from nets.nar_model import NARModel
 from nets.critic_network import CriticNetwork
 from nets.encoders.gat_encoder import GraphAttentionEncoder
 from nets.encoders.gnn_encoder import GNNEncoder
+from nets.encoders.gnn_equiv_encoder import CircularHarmonicsGNNEncoder
 from nets.encoders.mlp_encoder import MLPEncoder
 
 from reinforce_baselines import NoBaseline, ExponentialBaseline, CriticBaseline, RolloutBaseline, WarmupBaseline
@@ -35,7 +36,8 @@ def run(opts):
     else:
         _run_rl(opts)
 
-
+def count_params(model): 
+        return sum(p.numel() for p in model.parameters() if p.requires_grad)
 def _run_rl(opts):
 
     # Pretty print the run args
@@ -58,7 +60,7 @@ def _run_rl(opts):
 
     # Set the device
     opts.device = torch.device("cuda:0" if opts.use_cuda else "cpu")
-
+    # opts.device = torch.device("mps:0" if torch.backends.mps.is_available() else "cpu")
     # Figure out what's the problem
     problem = load_problem(opts.problem)
 
@@ -111,7 +113,8 @@ def _run_rl(opts):
     nb_param = 0
     for param in model.parameters():
         nb_param += np.prod(list(param.data.size()))
-    print('Number of parameters: ', nb_param)
+    
+    print('Number of parameters: ', count_params(model))
 
     # Overwrite model parameters by parameters to load
     model_ = get_inner_model(model)
@@ -238,7 +241,7 @@ def _run_sl(opts):
 
     # Set the device
     opts.device = torch.device("cuda:0" if opts.use_cuda else "cpu")
-
+    # opts.device = torch.device("mps:0" if torch.backends.mps.is_available() else "cpu")
     # Figure out what's the problem
     problem = load_problem(opts.problem)
     assert opts.problem == 'tspsl', "Only TSP is supported for supervised learning"
@@ -260,6 +263,7 @@ def _run_sl(opts):
     assert model_class is not None, "Unknown model: {}".format(model_class)
     encoder_class = {
         'gnn': GNNEncoder,
+        'ch_gnn': CircularHarmonicsGNNEncoder,
         'gat': GraphAttentionEncoder,
         'mlp': MLPEncoder
     }.get(opts.encoder, None)
@@ -292,7 +296,7 @@ def _run_sl(opts):
     nb_param = 0
     for param in model.parameters():
         nb_param += np.prod(list(param.data.size()))
-    print('Number of parameters: ', nb_param)
+    print('Number of parameters: ', count_params(model))
 
     # Overwrite model parameters by parameters to load
     model_ = get_inner_model(model)
@@ -317,6 +321,7 @@ def _run_sl(opts):
         filename=opts.train_dataset, batch_size=opts.batch_size, num_samples=opts.epoch_size, 
         neighbors=opts.neighbors, knn_strat=opts.knn_strat, supervised=True, nar=(opts.model == 'nar')
     )
+
     opts.epoch_size = train_dataset.size  # Training set size might be different from specified epoch size
     val_datasets = []
     for val_filename in opts.val_datasets:

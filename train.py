@@ -26,39 +26,49 @@ def set_decode_type(model, decode_type):
 
 
 def validate(model, dataset, problem, opts):
-    # Validate
     print(f'\nValidating on {dataset.size} samples from {dataset.filename}...')
-    cost = rollout(model, dataset, opts)
+    costs, losses = rollout(model, dataset, opts)
     gt_cost = rollout_groundtruth(problem, dataset, opts)
-    opt_gap = ((cost/gt_cost - 1) * 100)
-    
-    print('Validation groundtruth cost: {:.3f} +- {:.3f}'.format(
-        gt_cost.mean(), torch.std(gt_cost)))
-    print('Validation average cost: {:.3f} +- {:.3f}'.format(
-        cost.mean(), torch.std(cost)))
-    print('Validation optimality gap: {:.3f}% +- {:.3f}'.format(
-        opt_gap.mean(), torch.std(opt_gap)))
 
-    return cost.mean(), opt_gap.mean()
+    opt_gap = (costs / gt_cost - 1) * 100
+
+    print('Validation groundtruth cost: {:.3f} +- {:.3f}'.format(
+        gt_cost.mean(), gt_cost.std()))
+    print('Validation average cost:     {:.3f} +- {:.3f}'.format(
+        costs.mean(),   costs.std()))
+    print('Validation optimality gap:   {:.3f}% +- {:.3f}'.format(
+        opt_gap.mean(), opt_gap.std()))
+    print('Validation loss:            {:.3f} +- {:.3f}'.format(
+        losses.mean(), losses.std()))
+
+    return costs.mean(), opt_gap.mean()
+
 
 
 def rollout(model, dataset, opts):
     # Put in greedy evaluation mode!
     set_decode_type(model, "greedy")
     model.eval()
-    
-    def eval_model_bat(bat):
-        with torch.no_grad():
-            cost, _ = model(move_to(bat['nodes'], opts.device), move_to(bat['graph'], opts.device))
-        return cost.data.cpu()
 
-    return torch.cat([
-        eval_model_bat(bat)
-        for bat in tqdm(
-            DataLoader(dataset, batch_size=opts.batch_size, shuffle=False, num_workers=opts.num_workers), 
-            disable=opts.no_progress_bar, ascii=True
-        )
-    ], 0)
+    all_costs = []
+    all_losses = []
+    loader = DataLoader(
+        dataset,
+        batch_size=opts.batch_size,
+        shuffle=False,
+        num_workers=opts.num_workers
+    )
+    for bat in tqdm(loader, disable=opts.no_progress_bar, ascii=True):
+        with torch.no_grad():
+            nodes = move_to(bat['nodes'], opts.device)
+            graph = move_to(bat['graph'], opts.device)
+            cost_b, loss_b = model(nodes, graph)   # assume model returns (cost, loss)
+        all_costs.append(cost_b.detach().cpu())
+        all_losses.append(loss_b.detach().cpu())
+
+    costs  = torch.cat(all_costs,  dim=0)  # shape: (N_samples,)
+    losses = torch.cat(all_losses, dim=0)  # shape: (N_samples,)
+    return costs, losses
 
 
 def rollout_groundtruth(problem, dataset, opts):
@@ -208,7 +218,7 @@ def train_epoch_sl(model, optimizer, lr_scheduler, epoch, train_dataset, val_dat
     set_decode_type(model, "greedy")
 
     for batch_id, batch in enumerate(tqdm(train_dataloader, disable=opts.no_progress_bar, ascii=True)):
-
+        
         train_batch_sl(
             model,
             optimizer,
@@ -244,14 +254,14 @@ def train_epoch_sl(model, optimizer, lr_scheduler, epoch, train_dataset, val_dat
         if not opts.no_tensorboard:
             tb_logger.log_value('val{}/avg_reward'.format(val_idx+1), avg_reward, step)
             tb_logger.log_value('val{}/opt_gap'.format(val_idx+1), avg_opt_gap, step)
-    
+
 
 def train_batch_sl(model, optimizer, epoch, batch_id, 
                    step, batch, tb_logger, opts):
     # Optionally move Tensors to GPU
     x = move_to(batch['nodes'], opts.device)
     graph = move_to(batch['graph'], opts.device)
-    
+
     if opts.model == 'nar':
         targets = move_to(batch['tour_edges'], opts.device)
         # Compute class weights for NAR decoder
@@ -259,21 +269,24 @@ def train_batch_sl(model, optimizer, epoch, batch_id,
         class_weights = compute_class_weight("balanced", classes=np.unique(_targets), y=_targets)
         class_weights = move_to(torch.FloatTensor(class_weights), opts.device)
     else:
+        N = 20
+        class_weights = np.array([N / (2*(N-1)), N/2])
         class_weights = None
         targets = move_to(batch['tour_nodes'], opts.device)
     
     # Evaluate model, get costs and loss
+    # torch.autograd.set_detect_anomaly(True)
+
     cost, loss = model(x, graph, supervised=True, targets=targets, class_weights=class_weights)
-    
     # Normalize loss for gradient accumulation
-    loss = loss / opts.accumulation_steps
+    # loss = loss / opts.accumulation_steps
     
     # Perform backward pass
     loss.backward()
     
     # Clip gradient norms and get (clipped) gradient norms for logging
     grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
-    
+
     # Perform optimization step after accumulating gradients
     if step % opts.accumulation_steps == 0:
         optimizer.step()

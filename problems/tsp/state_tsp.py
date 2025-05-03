@@ -1,9 +1,9 @@
 import torch
-from typing import NamedTuple
 from utils.boolmask import mask_long2bool, mask_long_scatter
-
-
-class StateTSP(NamedTuple):
+from utils import RecordMixin
+from dataclasses import dataclass
+@dataclass(slots=True, frozen=False)
+class StateTSP(RecordMixin):
     """Class used to keep track of TSP state, mainly used during beam search
     """
 

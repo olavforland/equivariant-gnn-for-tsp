@@ -23,7 +23,7 @@ def eval_dataset(dataset_path, decode_strategy, width, softmax_temp, opts):
     model, model_args = load_model(opts.model)
     use_cuda = torch.cuda.is_available() and not opts.no_cuda
     
-    device = torch.device("cuda:0" if use_cuda else "cpu")
+    device = torch.device("cuda:0" if use_cuda else "mps:0" if torch.backends.mps.is_available() else "cpu")
     dataset = model.problem.make_dataset(
         filename=dataset_path, batch_size=opts.batch_size, num_samples=opts.val_size, 
         neighbors=model_args['neighbors'], knn_strat=model_args['knn_strat'], supervised=True

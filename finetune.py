@@ -166,7 +166,7 @@ if __name__ == "__main__":
         json.dump(vars(opts), f, indent=True)
     
     # Set the device
-    opts.device = torch.device("cuda:0" if opts.use_cuda else "cpu")
+    device = torch.device("cuda:0" if opts.use_cuda else "mps:0" if torch.backends.mps.is_available() else "cpu")
     
     # Find model file
     if os.path.isfile(opts.model):

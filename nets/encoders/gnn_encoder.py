@@ -113,9 +113,10 @@ class GNNLayer(nn.Module):
         """
         # Perform feature-wise gating mechanism
         Vh = gates * Vh  # B x V x V x H
-        
+
         # Enforce graph structure through masking
-        Vh[graph.unsqueeze(-1).expand_as(Vh)] = 0
+        Vh.masked_fill_(graph.unsqueeze(-1).expand_as(Vh).bool(), 0)
+
         
         if self.aggregation == "mean":
             return torch.sum(Vh, dim=2) / torch.sum(1-graph, dim=2).unsqueeze(-1).type_as(Vh)
@@ -126,6 +127,8 @@ class GNNLayer(nn.Module):
         else:
             return torch.sum(Vh, dim=2)
         
+
+
 
 class GNNEncoder(nn.Module):
     """Configurable GNN Encoder
@@ -145,15 +148,17 @@ class GNNEncoder(nn.Module):
     def forward(self, x, graph):
         """
         Args:
-            x: Input node features (B x V x H)
+            x: Input node features (B x V x 2)
             graph: Graph adjacency matrices (B x V x V)
         Returns: 
-            Updated node features (B x V x H)
+            Node features (B x V x H)
         """
         # Embed edge features
+
         e = self.init_embed_edges(graph.type(torch.long))
 
         for layer in self.layers:
             x, e = layer(x, e, graph)
 
         return x
+    
