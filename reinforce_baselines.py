@@ -162,7 +162,7 @@ class RolloutBaseline(Baseline):
         )
         
         print("\nEvaluating Rollout baseline model on evaluation dataset")
-        self.bl_vals = rollout(self.model, self.dataset, self.opts).cpu().numpy()
+        self.bl_vals, _ = rollout(self.model, self.dataset, self.opts).cpu().numpy()
         self.mean = self.bl_vals.mean()
         self.epoch = epoch
 
@@ -190,7 +190,7 @@ class RolloutBaseline(Baseline):
         :param epoch: The current epoch
         """
         print("\nEvaluating candidate model on evaluation dataset")
-        candidate_vals = rollout(model, self.dataset, self.opts).cpu().numpy()
+        candidate_vals, _ = rollout(model, self.dataset, self.opts).cpu().numpy()
 
         candidate_mean = candidate_vals.mean()
 
