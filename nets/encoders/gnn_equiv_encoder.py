@@ -127,7 +127,7 @@ class CircularHarmonicsGNNEncoder(nn.Module):
         self.conv = CircularHarmonicConv(hidden_dim, M=M, N_b=8)
         # stack InteractionBlocks
         self.blocks = nn.ModuleList([
-            InteractionBlock(hidden_dim, M=M, aggregation='sum')
+            InteractionBlock(hidden_dim, M=M, aggregation=aggregation)
             for _ in range(n_layers)
         ])
         self.output = nn.Sequential(
