@@ -1,0 +1,14 @@
+# requirements.txt
+
+tensorboard_logger
+gdown
+numpy
+scipy
+cython
+tqdm
+scikit-learn
+matplotlib
+seaborn
+tensorboard
+pandas
+jupyterlab
