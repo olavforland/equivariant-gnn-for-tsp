@@ -88,15 +88,15 @@ def load_args(filename):
 def load_model(path, epoch=None, extra_logging=False):
     from nets.attention_model import AttentionModel
     from nets.nar_model import NARModel
-    from nets.encoders.gat_encoder import GraphAttentionEncoder
     from nets.encoders.gnn_encoder import GNNEncoder
-    from nets.encoders.mlp_encoder import MLPEncoder
+    from nets.encoders.gnn_equiv_encoder import CircularHarmonicsGNNEncoder
     
     if os.path.isfile(path):
         model_filename = path
         path = os.path.dirname(model_filename)
     elif os.path.isdir(path):
         if epoch is None:
+            print(os.listdir(path))
             epoch = max(
                 int(os.path.splitext(filename)[0].split("-")[1])
                 for filename in os.listdir(path)
@@ -118,8 +118,7 @@ def load_model(path, epoch=None, extra_logging=False):
     assert model_class is not None, "Unknown model: {}".format(model_class)
     encoder_class = {
         'gnn': GNNEncoder,
-        'gat': GraphAttentionEncoder,
-        'mlp': MLPEncoder
+        'ch_gnn': CircularHarmonicsGNNEncoder,
     }.get(args.get('encoder', 'gnn'), None)
     assert encoder_class is not None, "Unknown encoder: {}".format(encoder_class)
     model = model_class(

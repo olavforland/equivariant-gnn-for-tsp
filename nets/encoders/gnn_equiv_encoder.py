@@ -25,7 +25,7 @@ class CircularHarmonicConv(nn.Module):
             nn.Linear(64, M+1),
         )
 
-    def forward(self, pos):
+    def forward(self, pos, graph):
         """
         Args:
             pos: Input node positions (B x V x 2)
@@ -58,6 +58,8 @@ class CircularHarmonicConv(nn.Module):
         sin_feat = R[...,1:] * sinm[...,1:] # (B,V,V,M)
 
         edge_features = torch.cat([cos_feat, sin_feat], dim=-1) # (B,V,V,2*M+1)
+        # edge_features = edge_features.masked_fill(graph.unsqueeze(-1).bool(), 0)  
+
         return edge_features
 
 
@@ -65,7 +67,7 @@ class CircularHarmonicConv(nn.Module):
 class InteractionBlock(nn.Module): 
     """Based on Nequip: self-interaction → conv → concat → self-interaction."""
 
-    def __init__(self, hidden_dim, M, aggregation="max"):
+    def __init__(self, hidden_dim, M, aggregation="max", learn_norm=True, track_norm=False, norm="layer"):
         super(InteractionBlock, self).__init__()
         self.aggregation = aggregation
         self.hidden_dim = hidden_dim
@@ -82,7 +84,12 @@ class InteractionBlock(nn.Module):
             nn.SiLU(),
         )
         self.non_linearity = nn.SiLU()
-        # self.order_weights = nn.Parameter(torch.ones(1, 1, 1, 2*M+1))
+        self.order_weights = nn.Parameter(torch.ones(1, 1, 1, 2*M+1))
+
+        self.layer_norm = {
+            "layer": nn.LayerNorm(hidden_dim, elementwise_affine=learn_norm),
+        }.get(norm, None)
+
 
 
     def forward(self, h, e, graph):
@@ -99,17 +106,14 @@ class InteractionBlock(nn.Module):
         m = e * h0.unsqueeze(1) # (B,V,V,H)
 
         m = m.masked_fill(graph.unsqueeze(-1).bool(), 0)  
-        if self.aggregation=="mean":
-            deg = (1-graph).sum(-1,keepdim=True)
-            neigh = m.sum(2)/deg
-        elif self.aggregation=="max":
-            neigh = m.max(2)[0]
-        else:  # sum
-            neigh = m.sum(2) 
+        neigh = m.sum(2) / torch.sqrt((1-graph).sum(-1,keepdim=True)) # (B,V,H)
 
         # concat & post self-interaction + residual
         h_cat = torch.cat([h0, neigh], dim=-1)            # (B,V,2H)
         h1 = self.post_fc(h_cat)                          # (B,V,H)
+
+        # Here?
+        h1 = self.layer_norm(h1) if self.layer_norm else h1
         return self.non_linearity(self.skip_interact(h) + h1)                                      # residual
 
 
@@ -127,7 +131,7 @@ class CircularHarmonicsGNNEncoder(nn.Module):
         self.conv = CircularHarmonicConv(hidden_dim, M=M, N_b=8)
         # stack InteractionBlocks
         self.blocks = nn.ModuleList([
-            InteractionBlock(hidden_dim, M=M, aggregation=aggregation)
+            InteractionBlock(hidden_dim, M=M, aggregation=aggregation, learn_norm=learn_norm, track_norm=track_norm, norm=norm)
             for _ in range(n_layers)
         ])
         self.output = nn.Sequential(
@@ -137,7 +141,7 @@ class CircularHarmonicsGNNEncoder(nn.Module):
         self.proj = nn.Linear(2*M+1, hidden_dim)
 
     def forward(self, pos, graph):
-        e = self.conv(pos)         # (B,V,V,2M+1)
+        e = self.conv(pos, graph)         # (B,V,V,2M+1)
         e = self.proj(e)         # (B,V,V,H)
         h = e.sum(1) # torch.zeros(size=pos.shape[:-1] + (self.hidden_dim, )) # (B,V,H)
         for block in self.blocks:
